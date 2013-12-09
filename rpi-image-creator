@@ -1,0 +1,166 @@
+#!/bin/bash -eu
+RASPBIAN_URL=http://downloads.raspberrypi.org/raspbian/images/raspbian-2013-10-07/2013-09-25-wheezy-raspbian.zip
+RASPBIAN_SHA1=99e6b5e6b8cfbf66e34437a74022fcf9744ccb1d
+INSTALL_PACKAGES=(
+    is24-rpi-env
+    is24-team-monitor
+)
+ADD_REPOS="
+deb http://debit/repo wheezy main
+"
+ADD_REPO_KEYS=(
+    "0A9A9A5B"
+)
+
+
+############ End of User Cusomization
+
+function die {
+    echo 1>&2 ERROR: "$*"
+    exit 1
+}
+
+# Constants
+NL="$(echo)"
+
+# taken from http://debian-handbook.info/browse/wheezy/sect.automatic-upgrades.html
+MIRACLE_COMBINATION_AUTO_UPGRADE_SCRIPT="
+#!/bin/bash -e
+exec &>/var/log/miracle-combination-auto-upgrade.log
+date
+apt-get update
+export DEBIAN_FRONTEND=noninteractive
+yes '' | apt-get -y -o Dpkg::Options::='--force-confdef' -o Dpkg::Options::='--force-confold' dist-upgrade
+"
+
+function _get_image {
+    echo "Fetching and unpacking $RASPBIAN_URL"
+    mkdir -p download
+    RASPBIAN_ARCHIVE_FILE=download/${RASPBIAN_URL##*/}
+    wget --no-verbose --progress bar --continue --directory-prefix download $RASPBIAN_URL || die "Download of $RASPBIAN_URL failed"
+    sha1sum --strict --check - <<<"$RASPBIAN_SHA1 *$RASPBIAN_ARCHIVE_FILE" || die "Download checksum validation failed, please check http://www.raspberrypi.org/downloads"
+    unzip -q $RASPBIAN_ARCHIVE_FILE -d temp/ || die "Could not unzip $RASPBIAN_ARCHIVE_FILE"
+}
+
+function _open_image {
+    echo "Loop-back mounting" temp/*.img
+    kpartx="$(kpartx -av temp/*.img)" || die "Could not setup loop-back access to $RASPBIAN_ARCHIVE_FILE:$NL$kpartx"
+    read img_boot_dev img_root_dev <<<$(grep -o 'loop.p.' <<<"$kpartx")
+    test "$img_boot_dev" -a "$img_root_dev" || die "Could not extract boot and root loop device from kpartx output:$NL$kpartx"
+    img_boot_dev=/dev/mapper/$img_boot_dev
+    img_root_dev=/dev/mapper/$img_root_dev
+    mkdir -p mnt/img_root
+    mount -t ext4 $img_root_dev mnt/img_root || die "Could not mount $img_root_dev mnt/img_root"
+    mkdir -p mnt/img_root/boot || die "Could not mkdir mnt/img_root/boot"
+    mount -t vfat $img_boot_dev mnt/img_root/boot || die "Could not mount $img_boot_dev mnt/img_root/boot"
+    cp -a $(type -p qemu-arm-static) mnt/img_root/usr/bin/ || die "Could not copy qemu-arm-static"
+    echo "Raspbian Image Details:"
+    df -h mnt/img_root/boot mnt/img_root
+}
+
+function _modify_image {
+    echo "Modifying Image"
+    chroot mnt/img_root date || die "Could not chroot date"
+    sed -i -e 's/^/#/' mnt/img_root/etc/ld.so.preload || die "Could not disable ld.so.preload"
+    rm -f mnt/img_root/etc/init.d/apply_noobs_os_config mnt/img_root/etc/rc2.d/S01apply_noobs_os_config mnt/img_root/etc/profile.d/raspi-config.sh || die "Could not remove noobs and raspi-config first-boot stuff"
+    sed -i -e '/RPICFG_TO_DISABLE/d' -e '/RPICFG_TO_ENABLE/s/^#//' -e '/RPICFG_TO_ENABLE/s/ #.*$//' mnt/img_root/etc/inittab || die "Could not remove raspi-config autorun from inittab"
+    cp /etc/resolv.conf mnt/img_root/etc || die "Could not copy resolv.conf"
+    tee >/dev/null -a mnt/img_root/etc/apt/sources.list <<<"$ADD_REPOS" || die "Could not add repos"
+    tee >/dev/null mnt/img_root/etc/hostname <<<"localhost" || die "Could not set hostname to localhost"
+    tee >/dev/null mnt/img_root/etc/dhcp/dhclient-enter-hooks.d/unset_old_hostname <<<"unset old_host_name # this will make the system always set the hostname from DHCP" || die "Could not apply fix http://blog.schlomo.schapiro.org/2013/11/setting-hostname-from-dhcp-in-debian.html"
+    gpg --no-permission-warning --no-default-keyring --keyring /etc/apt/trusted.gpg --export ${ADD_REPO_KEYS[@]} | gpg --no-permission-warning --no-default-keyring --keyring mnt/img_root/etc/apt/trusted.gpg --trustdb-name mnt/img_root/etc/apt/trustdb.gpg --import - || die "Could not import GPG keys for apt"
+    IFS=: read a b c d e user_home g < <(getent passwd ${SUDO_USER:-$USER})
+    mkdir -p mnt/img_root/root/.ssh || die "Could not mkdir mnt/img_root/root/.ssh"
+    cat $user_home/.ssh/*.pub <<<"" >mnt/img_root/root/.ssh/authorized_keys || :
+    chmod 0600 mnt/img_root/root/.ssh/authorized_keys || die "Could not chmod 0600 mnt/img_root/root/.ssh/authorized_keys"
+    if (( $(wc -l <mnt/img_root/root/.ssh/authorized_keys) > 0 )) ; then
+        echo "Installed SSH keys from $user_home, disabling password access"
+        sed -i -e 's/.*PasswordAuthentication.*/PasswordAuthentication no/i' mnt/img_root/etc/ssh/sshd_config || die "Could not disable password auth in mnt/img_root/etc/ssh/sshd_config"
+    fi
+    # ATM wheezy security has a broken chromium / chromium-inspector dependency and we should not use it
+    #bash -c "echo deb http://security.debian.org/ wheezy/updates main contrib non-free >mnt/img_root/etc/apt/sources.list.d/security.list" || die "Could not add Debian Security repo"
+    #wget -q -O- http://ftp-master.debian.org/keys/archive-key-7.0.asc | gpg --no-permission-warning --no-default-keyring --keyring mnt/img_root/etc/apt/trusted.gpg --trustdb-name mnt/img_root/etc/apt/trustdb.gpg --import - || die "Could not add Debian security GPG keys"
+    echo "Installing Updates and ${INSTALL_PACKAGES[@]}"
+    chroot mnt/img_root apt-get -q update
+    chroot mnt/img_root apt-get -qy dist-upgrade || die "Could not upgrade system"
+    chroot mnt/img_root apt-get -qy install ${INSTALL_PACKAGES[@]} || die "Could not install ${INSTALL_PACKAGES[@]}"
+}
+
+function _create_sdcard {
+    # putting it all onto SD card
+    DEST_DEVICE="$1"
+    test -b "$DEST_DEVICE" || die "Must give block device with SD Card as first parameter"
+
+    umount -f ${DEST_DEVICE}* || :
+    parted -a minimal -s $DEST_DEVICE mklabel msdos mkpart primary fat32 0mb 64mb mkpart primary ext2 64mb 100% set 1 boot on print || die "Could not parted $DEST_DEVICE"
+    sd_boot_dev=${DEST_DEVICE}p1
+    sd_root_dev=${DEST_DEVICE}p2
+    mkdir -p mnt/sd_boot mnt/sd_root
+    mkfs.vfat -n RASPBIAN_BOOT -F 32 $sd_boot_dev -m - <<<"This is the boot partition of a Raspbian image intended for a Raspberry Pi" || die "Could not create boot partition"
+    mkfs.ext4 -q -L raspbian_root -E discard $sd_root_dev || die "Could not create root partition"
+    tune2fs $sd_root_dev -o journal_data,discard || die "Could not tune2fs $sd_root_dev"
+    mount -v -o data=writeback,nobarrier -t ext4 $sd_root_dev mnt/sd_root || die "Could not mount $sd_boot_dev mnt/sd_boot"
+    mkdir -p mnt/sd_root/boot || die "Could not mkdir boot"
+    mount -v -t vfat $sd_boot_dev mnt/sd_root/boot || die "Could not mount $sd_boot_dev mnt/sd_root/boot"
+    cp -a mnt/img_root/* mnt/sd_root/ || die "Could not copy root fs"
+    echo "SD Card Details:"
+    fdisk -l $DEST_DEVICE
+    df -h mnt/sd_root/boot mnt/sd_root
+
+    sed -i -e 's/#//' mnt/sd_root/etc/ld.so.preload || die "Could not enable ld.so.preload"
+    echo
+    echo "SD Card Creation finished, please wait for script to complete."
+}
+
+DESTDEVICE=
+if [[ -b "${1:-}" ]] ; then
+    DESTDEVICE="$1"
+fi
+
+if [[ $# -eq 0 || "$*" == *-h* ]] ; then
+    echo "
+Usage: $0 <--chroot|/dev/mmcblk0>
+
+Download Raspbian Image, remove first-boot stuff, add repos and install packages.
+
+Open interactive Shell in chroot or write result to SD Card
+
+License: GNU General Public License
+"
+    exit 1
+fi
+
+if [[ "$USER" != root && $(id -u) != "0" ]] ; then
+    # restart as root
+    exec sudo "$(readlink -f "$0")" "$@"
+    echo "Need permissions!"
+    exit 1
+fi
+
+rm -Rf mnt temp
+mkdir -p temp
+function exittrap {
+    set +u +e
+    umount -f mnt/sd_root/boot mnt/img_root/boot mnt/sd_root mnt/img_root
+    kpartx -v -d temp/*.img
+    echo "Script execution time: $SECONDS seconds"
+}
+trap exittrap 0
+trap exittrap ERR
+
+
+_get_image
+_open_image
+_modify_image
+
+if [[ "$DESTDEVICE" ]] ; then
+    _create_sdcard "$DESTDEVICE"
+elif [[ "$1" == "--chroot" ]] ; then
+    echo "Starting interactive Shell in image chroot"
+    chroot mnt/img_root bash -i
+    exit 0
+else
+    die "Usage error. Try $0 --help"
+fi
+
+
