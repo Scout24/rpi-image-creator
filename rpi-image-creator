@@ -94,8 +94,8 @@ function _create_sdcard {
 
     umount -f ${DEST_DEVICE}* || :
     parted -a minimal -s $DEST_DEVICE mklabel msdos mkpart primary fat32 0mb 64mb mkpart primary ext2 64mb 100% set 1 boot on print || die "Could not parted $DEST_DEVICE"
-    [ -e ${DEST_DEVICE}p1 ] && sd_boot_dev=${DEST_DEVICE}p1 || [ -e ${DEST_DEVICE}1 ] && sd_boot_dev=${DEST_DEVICE}1 || die "Could not find sd-card partition 1"
-    [ -e ${DEST_DEVICE}p2 ] && sd_root_dev=${DEST_DEVICE}p2 || [ -e ${DEST_DEVICE}2 ] && sd_root_dev=${DEST_DEVICE}2 || die "Could not find sd-card partition 2"
+    if [ -e ${DEST_DEVICE}p1 ] ; then sd_boot_dev=${DEST_DEVICE}p1 ; elif [ -e ${DEST_DEVICE}1 ] ; then sd_boot_dev=${DEST_DEVICE}1 ; else echo "Could not find sd-card partition 1" ; fi
+    if [ -e ${DEST_DEVICE}p2 ] ; then sd_root_dev=${DEST_DEVICE}p2 ; elif [ -e ${DEST_DEVICE}2 ] ; then sd_root_dev=${DEST_DEVICE}2 ; else echo "Could not find sd-card partition 2" ; fi
     mkdir -p mnt/sd_boot mnt/sd_root
     mkfs.vfat -n RASPBIAN_BOOT -F 32 $sd_boot_dev -m - <<<"This is the boot partition of a Raspbian image intended for a Raspberry Pi" || die "Could not create boot partition"
     mkfs.ext4 -q -L raspbian_root -E discard $sd_root_dev || die "Could not create root partition"
