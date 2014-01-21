@@ -77,6 +77,7 @@ function _modify_image {
         echo "Installed SSH keys from $user_home, disabling password access"
         sed -i -e 's/.*PasswordAuthentication.*/PasswordAuthentication no/i' mnt/img_root/etc/ssh/sshd_config || die "Could not disable password auth in mnt/img_root/etc/ssh/sshd_config"
     fi
+    sed -i -e 's/.*disable_overscan=.*/disable_overscan=1/i' mnt/img_root/boot/config.txt || die "Could not disable overscan in mnt/img_root/boot/config.txt"
     # ATM wheezy security has a broken chromium / chromium-inspector dependency and we should not use it
     #bash -c "echo deb http://security.debian.org/ wheezy/updates main contrib non-free >mnt/img_root/etc/apt/sources.list.d/security.list" || die "Could not add Debian Security repo"
     #wget -q -O- http://ftp-master.debian.org/keys/archive-key-7.0.asc | gpg --no-permission-warning --no-default-keyring --keyring mnt/img_root/etc/apt/trusted.gpg --trustdb-name mnt/img_root/etc/apt/trustdb.gpg --import - || die "Could not add Debian security GPG keys"
