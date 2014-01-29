@@ -20,6 +20,17 @@ function die {
     exit 1
 }
 
+function check_dep {
+    local dep=$1
+    [ -x "$( type -p $dep )" ] || die "$dep not found"
+}
+
+check_dep kpartx
+check_dep wget
+check_dep gpg
+check_dep parted
+check_dep qemu-arm-static
+
 # Constants
 NL="$(echo)"
 
@@ -53,7 +64,7 @@ function _open_image {
     mount -t ext4 $img_root_dev mnt/img_root || die "Could not mount $img_root_dev mnt/img_root"
     mkdir -p mnt/img_root/boot || die "Could not mkdir mnt/img_root/boot"
     mount -t vfat $img_boot_dev mnt/img_root/boot || die "Could not mount $img_boot_dev mnt/img_root/boot"
-    cp -a $(type -p qemu-arm-static) mnt/img_root/usr/bin/ || die "Could not copy qemu-arm-static"
+    cp -a "$(type -p qemu-arm-static)" mnt/img_root/usr/bin/ || die "Could not copy qemu-arm-static"
     echo "Raspbian Image Details:"
     df -h mnt/img_root/boot mnt/img_root
 }
@@ -64,6 +75,7 @@ function _modify_image {
     sed -i -e 's/^/#/' mnt/img_root/etc/ld.so.preload || die "Could not disable ld.so.preload"
     rm -f mnt/img_root/etc/init.d/apply_noobs_os_config mnt/img_root/etc/rc2.d/S01apply_noobs_os_config mnt/img_root/etc/profile.d/raspi-config.sh || die "Could not remove noobs and raspi-config first-boot stuff"
     sed -i -e '/RPICFG_TO_DISABLE/d' -e '/RPICFG_TO_ENABLE/s/^#//' -e '/RPICFG_TO_ENABLE/s/ #.*$//' mnt/img_root/etc/inittab || die "Could not remove raspi-config autorun from inittab"
+    sed -i -e 's/^#\(FSCKFIX=\)no/\1yes/' mnt/img_root/etc/default/rcS || die "Could not enable automatic filesystem fix on boot" 
     cp /etc/resolv.conf mnt/img_root/etc || die "Could not copy resolv.conf"
     tee >/dev/null -a mnt/img_root/etc/apt/sources.list <<<"$ADD_REPOS" || die "Could not add repos"
     tee >/dev/null mnt/img_root/etc/hostname <<<"localhost" || die "Could not set hostname to localhost"
