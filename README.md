@@ -25,4 +25,8 @@ This script does not simply copy a binary image file onto the SD card. Instead i
 
 * Insert an SD card
 * Find out the block device of the SD card in `/proc/partitions`, e.g. `/dev/mmcblk0`
-* Run script: `sudo rpi-image-creator /dev/mmcblk0`.
+* Run script: `rpi-image-creator /dev/mmcblk0`.
+
+## Advanced Usage
+
+* Dry-run script with `rpi-image-create --chroot`. This does everything except writing to an SD card. Instead it will put you into a chroot in the created image. Note: When you exit the chroot shell the chroot area is removed.
