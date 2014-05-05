@@ -106,6 +106,7 @@ function _create_sdcard {
     test -b "$DEST_DEVICE" || die "Must give block device with SD Card as first parameter"
 
     umount -f ${DEST_DEVICE}* || :
+    dd if=/dev/zero of=$DEST_DEVICE bs=1M count=100 || die "Could not wipe SD card in $DEST_DEVICE"
     parted -a minimal -s $DEST_DEVICE mklabel msdos mkpart primary fat32 0mb 64mb mkpart primary ext2 64mb 100% set 1 boot on print || die "Could not parted $DEST_DEVICE"
     if [ -e ${DEST_DEVICE}p1 ] ; then sd_boot_dev=${DEST_DEVICE}p1 ; elif [ -e ${DEST_DEVICE}1 ] ; then sd_boot_dev=${DEST_DEVICE}1 ; else die "Could not find sd-card partition 1" ; fi
     if [ -e ${DEST_DEVICE}p2 ] ; then sd_root_dev=${DEST_DEVICE}p2 ; elif [ -e ${DEST_DEVICE}2 ] ; then sd_root_dev=${DEST_DEVICE}2 ; else die "Could not find sd-card partition 2" ; fi
