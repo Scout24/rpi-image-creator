@@ -1,6 +1,6 @@
 #!/bin/bash -eu
-RASPBIAN_URL=http://downloads.raspberrypi.org/raspbian/images/raspbian-2014-01-09/2014-01-07-wheezy-raspbian.zip
-RASPBIAN_SHA1=9d0afbf932ec22e3c29d793693f58b0406bcab86
+RASPBIAN_URL=http://downloads.raspberrypi.org/raspbian/images/raspbian-2014-09-12/2014-09-09-wheezy-raspbian.zip
+RASPBIAN_SHA1=951a9092dd160ea06195963d1afb47220588ed84
 INSTALL_PACKAGES=(
     is24-rpi-env
     is24-team-monitor
