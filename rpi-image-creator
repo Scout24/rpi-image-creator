@@ -48,7 +48,7 @@ function _get_image {
     echo "Fetching and unpacking $RASPBIAN_URL"
     mkdir -p download
     RASPBIAN_ARCHIVE_FILE=download/${RASPBIAN_URL##*/}
-    wget --no-verbose --progress bar --continue --directory-prefix download $RASPBIAN_URL || die "Download of $RASPBIAN_URL failed"
+    wget --no-verbose --continue --directory-prefix download $RASPBIAN_URL || die "Download of $RASPBIAN_URL failed"
     sha1sum --strict --check - <<<"$RASPBIAN_SHA1 *$RASPBIAN_ARCHIVE_FILE" || die "Download checksum validation failed, please check http://www.raspberrypi.org/downloads"
     unzip -q $RASPBIAN_ARCHIVE_FILE -d temp/ || die "Could not unzip $RASPBIAN_ARCHIVE_FILE"
 }
@@ -156,7 +156,7 @@ rm -Rf mnt temp
 mkdir -p temp
 function exittrap {
     set +u +e
-    umount -f mnt/sd_root/boot mnt/img_root/boot mnt/sd_root mnt/img_root
+    umount -f mnt/sd_root/boot mnt/img_root/boot mnt/sd_root mnt/img_root || { lsof | grep $(pwd) ; }
     kpartx -v -d temp/*.img
     echo "Script execution time: $SECONDS seconds"
 }
