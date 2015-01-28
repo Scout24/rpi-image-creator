@@ -98,6 +98,7 @@ function _modify_image {
     chroot mnt/img_root apt-get -q -y purge wolfram-engine || die "Could not remove wolfram_engine"
     chroot mnt/img_root apt-get -qy dist-upgrade || die "Could not upgrade system"
     chroot mnt/img_root apt-get -qy install ${INSTALL_PACKAGES[@]} || die "Could not install ${INSTALL_PACKAGES[@]}"
+    chroot mnt/img_root service rsyslog stop || : # some packages start syslog
 }
 
 function _create_sdcard {
