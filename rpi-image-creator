@@ -148,6 +148,7 @@ fi
 
 if [[ "$USER" != root && $(id -u) != "0" ]] ; then
     # restart as root
+    echo "Switching over to run as root"
     exec sudo "$(readlink -f "$0")" "$@"
     echo "Need permissions!"
     exit 1
